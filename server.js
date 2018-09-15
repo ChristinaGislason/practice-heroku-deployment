@@ -3,10 +3,10 @@
 const pg = require('pg');
 const fs = require('fs');
 const express = require('express');
-const PORT = process.env.PORT || 3000; 
+const PORT = process.env.PORT || 3000;
 const app = express();
 
-const conString = process.env.DATABASE_URL ||'postgres://christinagislason:ilovebryan@localhost:5432/kilovolt';
+const conString = 'postgres://christinagislason:ilovebryan@localhost:5432/kilovolt';
 const client = new pg.Client(conString);
 client.connect();
 client.on('error', error => {
@@ -24,7 +24,7 @@ app.get('/new-article', (request, response) => {
 
 // REVIEW: These are routes for making API calls to enact CRUD operations on our database.
 app.get('/articles', (request, response) => {
-  client.query(``)
+  client.query(`SELECT * FROM articles INNER JOIN authors on articles.author_id=authors.author_id`)
     .then(result => {
       response.send(result.rows);
     })
@@ -33,9 +33,15 @@ app.get('/articles', (request, response) => {
     });
 });
 
+
 app.post('/articles', (request, response) => {
-  let SQL = '';
-  let values = [];
+  //inserts into authors table
+  let SQL = 'INSERT INTO authors (author, author_url) VALUES($1, $2) ON CONFLICT DO NOTHING';
+  let values = [
+    //if you try to insert author Noah, if he already exists in the table, nothing will happen
+    request.body.author, 
+    request.body.author_url
+  ];
 
   client.query( SQL, values,
     function(err) {
@@ -45,8 +51,10 @@ app.post('/articles', (request, response) => {
     }
   )
 
-  SQL = '';
-  values = [];
+  SQL = 'SELECT * FROM authors WHERE authors.author=$1';
+  values = [
+    request.body.author
+  ];
 
   function queryTwo() {
     client.query( SQL, values,
@@ -54,31 +62,47 @@ app.post('/articles', (request, response) => {
         if (err) console.error(err);
 
         // REVIEW: This is our third query, to be executed when the second is complete. We are also passing the author_id into our third query.
-        queryThree(result.rows[0].author_id);
+        queryThree(result.rows[0].author_id); //grab the author id
       }
     )
   }
 
-  SQL = '';
-  values = [];
-
+  //pass in author id that was got from query two
   function queryThree(author_id) {
+    SQL = 'INSERT INTO articles(author_id, title, category, published_on, body) VALUES ($1, $2, $3, $4, $5)';
+    values = [
+      author_id,
+      request.body.title,
+      request.body.category,
+      request.body.published_on,
+      request.body.body,
+    ];
     client.query( SQL, values,
-      function(err) {
-        if (err) console.error(err);
-        response.send('insert complete');
+      function(err, result) {
+        if (err) console.error(err); //postgres sends back this error to us; we view that through nodemon in our terminal
+        response.send('insert complete'); //send response from server to client 'insert complete'
       }
     );
   }
 });
 
-app.put('/articles/:id', function(request, response) {
-  let SQL = '';
-  let values = [];
+app.put('/articles/:id', function(request, response) { //':id' is a variable; ':' is how express defines its routes
+  let SQL = 'UPDATE authors SET author=$1, author_url=$2 WHERE author_id=$3';
+  let values = [
+    request.body.author,
+    request.body.authorUrl,
+    request.body.author_id
+  ];
   client.query( SQL, values )
     .then(() => {
-      let SQL = '';
-      let values = [];
+      let SQL = 'UPDATE articles SET title=$1, category=$2, "published_on"=$3, body=$4 WHERE author_id=$5';
+      let values = [
+        request.body.title,
+        request.body.category,
+        request.body.published_on,
+        request.body.body,
+        request.body.author_id
+      ];
       client.query( SQL, values )
     })
     .then(() => {
@@ -143,10 +167,7 @@ function loadArticles() {
         fs.readFile('./public/data/hackerIpsum.json', 'utf8', (err, fd) => {
           JSON.parse(fd).forEach(ele => {
             let SQL = `
-              INSERT INTO articles(author_id, title, category, published_on, body)
-              SELECT author_id, $1, $2, $3, $4
-              FROM authors
-              WHERE author=$5;
+         
             `;
             let values = [ele.title, ele.category, ele.published_on, ele.body, ele.author];
             client.query( SQL, values )
